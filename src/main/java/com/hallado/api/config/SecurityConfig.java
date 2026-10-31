@@ -40,12 +40,14 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**", "/h2-console/**", "/swagger-ui.html", "/swagger-ui/**", "/api-docs/**", "/v3/api-docs/**").permitAll()
                         // Lectura pública: buscar y ver el detalle de una publicación no requiere login
                         // (igual que explorar en Ronda); el resto de /api/publicaciones/** sí lo requiere.
+                        // Igual que "/me" más abajo: rutas literales antes del patrón público "/{id}".
+                        .requestMatchers(HttpMethod.GET, "/api/publicaciones/mias", "/api/publicaciones/seguidas").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/publicaciones", "/api/publicaciones/{id}").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/categorias", "/api/categorias/**").permitAll()
                         // "/me" va ANTES que el patrón público "/{id}": si no, "me" matchearía
                         // como si fuera un id y el perfil propio quedaría sin autenticación.
                         .requestMatchers(HttpMethod.GET, "/api/usuarios/me").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/api/usuarios/{id}").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/usuarios/{id}", "/api/usuarios/{id}/agradecimientos").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

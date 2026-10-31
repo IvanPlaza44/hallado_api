@@ -5,6 +5,7 @@ import com.hallado.api.dto.request.ReclamoRequestDto;
 import com.hallado.api.dto.response.PaginaDto;
 import com.hallado.api.dto.response.PublicacionDetalleDto;
 import com.hallado.api.dto.response.PublicacionResumenDto;
+import com.hallado.api.dto.response.PublicacionSeguidaDto;
 import com.hallado.api.dto.response.ReclamoResponseDto;
 import com.hallado.api.entity.Foto;
 import com.hallado.api.entity.Publicacion;
@@ -256,7 +257,39 @@ public class PublicacionService {
         Publicacion p = publicacionRepository.findById(publicacionId)
                 .orElseThrow(() -> ApiException.noEncontrado("Publicación no encontrada"));
         if (seguimientoRepository.existsByUsuarioAndPublicacion(usuario, p)) return;
-        seguimientoRepository.save(Seguimiento.builder().usuario(usuario).publicacion(p).build());
+        seguimientoRepository.save(Seguimiento.builder().usuario(usuario).publicacion(p).estadoVisto(p.getEstado()).build());
+    }
+
+    @Transactional
+    public List<PublicacionSeguidaDto> seguidas(Usuario usuario) {
+        return seguimientoRepository.findByUsuarioOrderByFechaCreacionDesc(usuario).stream()
+                .map(s -> {
+                    Publicacion p = s.getPublicacion();
+                    // Seguimientos creados antes de guardar estadoVisto toman el estado actual como referencia.
+                    if (s.getEstadoVisto() == null) {
+                        s.setEstadoVisto(p.getEstado());
+                        seguimientoRepository.save(s);
+                    }
+                    boolean cambioEstado = s.getEstadoVisto() != p.getEstado();
+                    return new PublicacionSeguidaDto(
+                            p.getId(), p.getTipo(), p.getCategoria(), p.getTitulo(), p.getBarrio(), p.getFechaSuceso(),
+                            p.getLatitud(), p.getLongitud(),
+                            p.getFotos().isEmpty() ? null : p.getFotos().get(0).getUrl(),
+                            p.getEstado(), p.getFechaPublicacion(), p.getPublicador().getNombre(),
+                            cambioEstado
+                    );
+                })
+                .toList();
+    }
+
+    @Transactional
+    public void marcarSeguidaVista(Usuario usuario, Long publicacionId) {
+        Publicacion p = publicacionRepository.findById(publicacionId)
+                .orElseThrow(() -> ApiException.noEncontrado("Publicación no encontrada"));
+        Seguimiento s = seguimientoRepository.findByUsuarioAndPublicacion(usuario, p)
+                .orElseThrow(() -> ApiException.noEncontrado("No seguís esta publicación"));
+        s.setEstadoVisto(p.getEstado());
+        seguimientoRepository.save(s);
     }
 
     @Transactional

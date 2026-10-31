@@ -37,6 +37,18 @@ public class BusquedaGuardadaController {
         return ResponseEntity.noContent().build();
     }
 
+    @PatchMapping("/{id}/pausar")
+    public ResponseEntity<Void> pausar(@AuthenticationPrincipal Usuario usuario, @PathVariable Long id) {
+        busquedaGuardadaService.cambiarActiva(usuario, id, false);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/{id}/reactivar")
+    public ResponseEntity<Void> reactivar(@AuthenticationPrincipal Usuario usuario, @PathVariable Long id) {
+        busquedaGuardadaService.cambiarActiva(usuario, id, true);
+        return ResponseEntity.noContent().build();
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> eliminar(@AuthenticationPrincipal Usuario usuario, @PathVariable Long id) {
         busquedaGuardadaService.eliminar(usuario, id);
