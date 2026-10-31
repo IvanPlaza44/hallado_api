@@ -5,6 +5,7 @@ import com.hallado.api.dto.request.ReclamoRequestDto;
 import com.hallado.api.dto.response.PaginaDto;
 import com.hallado.api.dto.response.PublicacionDetalleDto;
 import com.hallado.api.dto.response.PublicacionResumenDto;
+import com.hallado.api.dto.response.PublicacionSeguidaDto;
 import com.hallado.api.dto.response.ReclamoResponseDto;
 import com.hallado.api.entity.Usuario;
 import com.hallado.api.enums.CategoriaItem;
@@ -131,6 +132,17 @@ public class PublicacionController {
     @DeleteMapping("/{id}/seguir")
     public ResponseEntity<Void> dejarDeSeguir(@AuthenticationPrincipal Usuario usuario, @PathVariable Long id) {
         publicacionService.dejarDeSeguir(usuario, id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/seguidas")
+    public ResponseEntity<List<PublicacionSeguidaDto>> seguidas(@AuthenticationPrincipal Usuario usuario) {
+        return ResponseEntity.ok(publicacionService.seguidas(usuario));
+    }
+
+    @PatchMapping("/{id}/seguir/visto")
+    public ResponseEntity<Void> marcarSeguidaVista(@AuthenticationPrincipal Usuario usuario, @PathVariable Long id) {
+        publicacionService.marcarSeguidaVista(usuario, id);
         return ResponseEntity.noContent().build();
     }
 }

@@ -58,6 +58,13 @@ public class BusquedaGuardadaService {
     }
 
     @Transactional
+    public void cambiarActiva(Usuario usuario, Long id, boolean activa) {
+        BusquedaGuardada bg = obtenerPropia(usuario, id);
+        bg.setActiva(activa);
+        busquedaGuardadaRepository.save(bg);
+    }
+
+    @Transactional
     public void eliminar(Usuario usuario, Long id) {
         busquedaGuardadaRepository.delete(obtenerPropia(usuario, id));
     }
@@ -81,10 +88,11 @@ public class BusquedaGuardadaService {
                 .and(PublicacionSpecifications.barrio(bg.getBarrio()))
                 .and(PublicacionSpecifications.publicadaDespuesDe(bg.getUltimaRevision()));
 
-        boolean hayNovedades = publicacionRepository.count(spec) > 0;
+        long cantidadNovedades = publicacionRepository.count(spec);
 
         return new BusquedaGuardadaResponseDto(
-                bg.getId(), bg.getNombre(), hayNovedades, bg.getTipo(), bg.getCategoria(), bg.getPalabrasClave(),
+                bg.getId(), bg.getNombre(), cantidadNovedades > 0, cantidadNovedades, bg.isActiva(),
+                bg.getTipo(), bg.getCategoria(), bg.getPalabrasClave(),
                 bg.getBarrio(), bg.getRangoFecha(), bg.getFechaDesde(), bg.getFechaHasta()
         );
     }

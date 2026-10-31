@@ -1,5 +1,6 @@
 package com.hallado.api.entity;
 
+import com.hallado.api.enums.EstadoPublicacion;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -28,4 +29,8 @@ public class Seguimiento {
 
     @Builder.Default
     private LocalDateTime fechaCreacion = LocalDateTime.now();
+
+    /** Estado de la publicación la última vez que el usuario la vio; si difiere del actual, hay cambio de estado. */
+    @Enumerated(EnumType.STRING)
+    private EstadoPublicacion estadoVisto;
 }

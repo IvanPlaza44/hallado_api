@@ -10,6 +10,8 @@ public record BusquedaGuardadaResponseDto(
         Long id,
         String nombre,
         boolean hayNovedades,
+        long cantidadNovedades,
+        boolean activa,
         TipoPublicacion tipo,
         CategoriaItem categoria,
         String palabrasClave,

@@ -5,6 +5,7 @@ import com.hallado.api.enums.RangoFecha;
 import com.hallado.api.enums.TipoPublicacion;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.ColumnDefault;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -49,4 +50,10 @@ public class BusquedaGuardada {
     /** Última vez que el usuario revisó esta alerta (para calcular novedades) */
     @Builder.Default
     private LocalDateTime ultimaRevision = LocalDateTime.now();
+
+    /** false = pausada. El default de columna mantiene activas las alertas creadas antes de este campo. */
+    @Builder.Default
+    @ColumnDefault("1")
+    @Column(nullable = false)
+    private boolean activa = true;
 }
