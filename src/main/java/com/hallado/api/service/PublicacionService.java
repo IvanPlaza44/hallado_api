@@ -104,11 +104,19 @@ public class PublicacionService {
         return aDetalle(p, usuario);
     }
 
-    @Transactional
-    public void eliminar(Usuario usuario, Long id) {
-        Publicacion p = obtenerPropia(usuario, id);
-        publicacionRepository.delete(p);
-    }
+        @Transactional
+            public void eliminar(Usuario usuario, Long id) {
+                Publicacion p = obtenerPropia(usuario, id);
+                // Con un reclamo en curso o ya resuelta, la publicación es parte de un trámite y del historial
+                if (p.getEstado() == EstadoPublicacion.EN_RECLAMO || p.getEstado() == EstadoPublicacion.RESUELTA) {
+                    throw ApiException.solicitudInvalida(
+                            "No podés eliminar una publicación con reclamos en curso o ya resuelta");
+                }
+                // Primero lo que apunta a la publicación (claves foráneas), después la publicación
+                seguimientoRepository.deleteByPublicacion(p);
+                reclamoRepository.deleteByPublicacion(p);
+                publicacionRepository.delete(p);
+            }
 
     // ---------- Borradores, publicar, renovar y vencimiento ----------
 

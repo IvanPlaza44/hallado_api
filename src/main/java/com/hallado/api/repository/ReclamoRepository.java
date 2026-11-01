@@ -16,4 +16,5 @@ public interface ReclamoRepository extends JpaRepository<Reclamo, Long> {
     List<Reclamo> findByReclamanteAndEstado(Usuario reclamante, EstadoReclamo estado);
     List<Reclamo> findByPublicacion_PublicadorAndEstado(Usuario publicador, EstadoReclamo estado);
     Optional<Reclamo> findFirstByPublicacionAndEstado(Publicacion publicacion, EstadoReclamo estado);
+        void deleteByPublicacion(Publicacion publicacion);
 }

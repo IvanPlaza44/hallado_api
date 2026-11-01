@@ -13,4 +13,5 @@ public interface SeguimientoRepository extends JpaRepository<Seguimiento, Long> 
     boolean existsByUsuarioAndPublicacion(Usuario usuario, Publicacion publicacion);
     long countByPublicacion(Publicacion publicacion);
     List<Seguimiento> findByUsuarioOrderByFechaCreacionDesc(Usuario usuario);
+    void deleteByPublicacion(Publicacion publicacion);
 }
