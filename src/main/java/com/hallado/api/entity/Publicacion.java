@@ -1,6 +1,7 @@
 package com.hallado.api.entity;
 
 import com.hallado.api.enums.CategoriaItem;
+import java.time.LocalTime;
 import com.hallado.api.enums.EstadoPublicacion;
 import com.hallado.api.enums.FranjaHoraria;
 import com.hallado.api.enums.TipoPublicacion;
@@ -49,6 +50,18 @@ public class Publicacion {
 
     @Enumerated(EnumType.STRING)
     private FranjaHoraria franjaHoraria;
+
+    /** Hora exacta (o aproximada) del suceso */
+    private LocalTime horaSuceso;
+
+    /** Solo para ENCONTRADO: pregunta sobre un detalle que no se ve en las fotos */
+    private String preguntaVerificacion;
+
+    /** Respuesta correcta a la pregunta. Privada: solo la ve el publicador */
+    private String respuestaVerificacion;
+
+    /** A los 30 días de publicada pasa a VENCIDA, salvo que se renueve */
+    private LocalDateTime fechaVencimiento;
 
     private String barrio;
 

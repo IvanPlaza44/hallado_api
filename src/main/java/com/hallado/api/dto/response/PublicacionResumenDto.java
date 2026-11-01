@@ -19,5 +19,6 @@ public record PublicacionResumenDto(
         String fotoPrincipal,
         EstadoPublicacion estado,
         LocalDateTime fechaPublicacion,
-        String publicadorNombre
+        String publicadorNombre,
+        LocalDateTime fechaVencimiento
 ) {}

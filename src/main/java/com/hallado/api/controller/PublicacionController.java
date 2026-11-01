@@ -156,4 +156,9 @@ public ResponseEntity<PublicacionDetalleDto> publicar(@AuthenticationPrincipal U
         publicacionService.marcarSeguidaVista(usuario, id);
         return ResponseEntity.noContent().build();
     }
+    @PostMapping("/{id}/renovar")
+    public ResponseEntity<PublicacionDetalleDto> renovar(@AuthenticationPrincipal Usuario usuario,
+                                                        @PathVariable Long id) {
+        return ResponseEntity.ok(publicacionService.renovar(usuario, id));
+    }
 }

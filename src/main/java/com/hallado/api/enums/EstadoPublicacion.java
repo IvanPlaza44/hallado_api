@@ -4,5 +4,6 @@ public enum EstadoPublicacion {
     BORRADOR,
     ABIERTA,
     EN_RECLAMO,
-    RESUELTA
+    RESUELTA,
+    VENCIDA
 }

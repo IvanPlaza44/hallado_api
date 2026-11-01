@@ -27,6 +27,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -82,6 +83,9 @@ public class PublicacionService {
         if (dto.latitud() != null) p.setLatitud(dto.latitud());
         if (dto.longitud() != null) p.setLongitud(dto.longitud());
         if (dto.direccionExacta() != null) p.setDireccionExacta(dto.direccionExacta());
+        if (dto.horaSuceso() != null) p.setHoraSuceso(dto.horaSuceso());
+        if (dto.preguntaVerificacion() != null) p.setPreguntaVerificacion(dto.preguntaVerificacion());
+        if (dto.respuestaVerificacion() != null) p.setRespuestaVerificacion(dto.respuestaVerificacion());
     }
 
     @Transactional
@@ -106,30 +110,62 @@ public class PublicacionService {
         publicacionRepository.delete(p);
     }
 
-    @Transactional
-public PublicacionDetalleDto publicar(Usuario usuario, Long id) {
-    Publicacion p = obtenerPropia(usuario, id);
-    if (p.getEstado() != EstadoPublicacion.BORRADOR) {
-        throw ApiException.solicitudInvalida("La publicación ya está publicada");
-    }
-    // Para publicar tienen que estar los datos obligatorios completos
-    if (p.getCategoria() == null || p.getTitulo() == null || p.getTitulo().isBlank()
-            || p.getFechaSuceso() == null || p.getBarrio() == null || p.getBarrio().isBlank()) {
-        throw ApiException.solicitudInvalida(
-                "Completá categoría, título, fecha del suceso y barrio antes de publicar");
-    }
-    p.setEstado(EstadoPublicacion.ABIERTA);
-    p.setFechaPublicacion(LocalDateTime.now());
-    p.setFechaActualizacion(LocalDateTime.now());
-    publicacionRepository.save(p);
-    return aDetalle(p, usuario);
-}
+    // ---------- Borradores, publicar, renovar y vencimiento ----------
 
-public List<PublicacionResumenDto> misBorradores(Usuario usuario) {
-    return publicacionRepository
-            .findByPublicadorAndEstadoIn(usuario, List.of(EstadoPublicacion.BORRADOR))
-            .stream().map(this::aResumen).toList();
-}
+    @Transactional
+    public PublicacionDetalleDto publicar(Usuario usuario, Long id) {
+        Publicacion p = obtenerPropia(usuario, id);
+        if (p.getEstado() != EstadoPublicacion.BORRADOR) {
+            throw ApiException.solicitudInvalida("La publicación ya está publicada");
+        }
+        // Para publicar tienen que estar los datos obligatorios completos
+        if (p.getCategoria() == null || p.getTitulo() == null || p.getTitulo().isBlank()
+                || p.getFechaSuceso() == null || p.getBarrio() == null || p.getBarrio().isBlank()) {
+            throw ApiException.solicitudInvalida(
+                    "Completá categoría, título, fecha del suceso y barrio antes de publicar");
+        }
+        // Si es algo ENCONTRADO, la pregunta de verificación y su respuesta son obligatorias
+        if (p.getTipo() == TipoPublicacion.ENCONTRADO
+                && (p.getPreguntaVerificacion() == null || p.getPreguntaVerificacion().isBlank()
+                || p.getRespuestaVerificacion() == null || p.getRespuestaVerificacion().isBlank())) {
+            throw ApiException.solicitudInvalida(
+                    "Si encontraste algo, cargá una pregunta de verificación y su respuesta");
+        }
+        p.setEstado(EstadoPublicacion.ABIERTA);
+        p.setFechaPublicacion(LocalDateTime.now());
+        p.setFechaVencimiento(LocalDateTime.now().plusDays(30));
+        p.setFechaActualizacion(LocalDateTime.now());
+        publicacionRepository.save(p);
+        return aDetalle(p, usuario);
+    }
+
+    public List<PublicacionResumenDto> misBorradores(Usuario usuario) {
+        return publicacionRepository
+                .findByPublicadorAndEstadoIn(usuario, List.of(EstadoPublicacion.BORRADOR))
+                .stream().map(this::aResumen).toList();
+    }
+
+    @Transactional
+    public PublicacionDetalleDto renovar(Usuario usuario, Long id) {
+        Publicacion p = obtenerPropia(usuario, id);
+        if (p.getEstado() != EstadoPublicacion.ABIERTA && p.getEstado() != EstadoPublicacion.VENCIDA) {
+            throw ApiException.solicitudInvalida("Solo se pueden renovar publicaciones abiertas o vencidas");
+        }
+        p.setEstado(EstadoPublicacion.ABIERTA);
+        p.setFechaVencimiento(LocalDateTime.now().plusDays(30));
+        p.setFechaActualizacion(LocalDateTime.now());
+        publicacionRepository.save(p);
+        return aDetalle(p, usuario);
+    }
+
+    /** Corre cada hora: las ABIERTAS cuyo plazo terminó pasan a VENCIDA. */
+    @Scheduled(cron = "0 0 * * * *")
+    @Transactional
+    public void vencerPublicaciones() {
+        publicacionRepository
+                .findByEstadoAndFechaVencimientoBefore(EstadoPublicacion.ABIERTA, LocalDateTime.now())
+                .forEach(p -> p.setEstado(EstadoPublicacion.VENCIDA));
+    }
 
     // ---------- Buscador guiado y resultados ----------
 
@@ -178,21 +214,24 @@ public List<PublicacionResumenDto> misBorradores(Usuario usuario) {
 
     public List<PublicacionResumenDto> misPublicaciones(Usuario usuario) {
         return publicacionRepository
-                .findByPublicadorAndEstadoIn(usuario, List.of(EstadoPublicacion.ABIERTA, EstadoPublicacion.EN_RECLAMO, EstadoPublicacion.RESUELTA))
+                .findByPublicadorAndEstadoIn(usuario, List.of(
+                        EstadoPublicacion.ABIERTA, EstadoPublicacion.EN_RECLAMO,
+                        EstadoPublicacion.RESUELTA, EstadoPublicacion.VENCIDA))
                 .stream().map(this::aResumen).toList();
     }
 
     // ---------- Detalle ----------
 
- public PublicacionDetalleDto obtenerDetalle(Long id, Usuario quienMira) {
-    Publicacion p = publicacionRepository.findById(id)
-            .orElseThrow(() -> ApiException.noEncontrado("Publicación no encontrada"));
-    if (p.getEstado() == EstadoPublicacion.BORRADOR
-            && (quienMira == null || !p.getPublicador().getId().equals(quienMira.getId()))) {
-        throw ApiException.noEncontrado("Publicación no encontrada");
+    public PublicacionDetalleDto obtenerDetalle(Long id, Usuario quienMira) {
+        Publicacion p = publicacionRepository.findById(id)
+                .orElseThrow(() -> ApiException.noEncontrado("Publicación no encontrada"));
+        // Un borrador solo lo ve su dueño
+        if (p.getEstado() == EstadoPublicacion.BORRADOR
+                && (quienMira == null || !p.getPublicador().getId().equals(quienMira.getId()))) {
+            throw ApiException.noEncontrado("Publicación no encontrada");
+        }
+        return aDetalle(p, quienMira);
     }
-    return aDetalle(p, quienMira);
-}
 
     // ---------- Reclamos ("Es mío" / "Lo encontré") ----------
 
@@ -345,7 +384,8 @@ public List<PublicacionResumenDto> misBorradores(Usuario usuario) {
                 p.getId(), p.getTipo(), p.getCategoria(), p.getTitulo(), p.getBarrio(), p.getFechaSuceso(),
                 p.getLatitud(), p.getLongitud(),
                 p.getFotos().isEmpty() ? null : p.getFotos().get(0).getUrl(),
-                p.getEstado(), p.getFechaPublicacion(), p.getPublicador().getNombre()
+                p.getEstado(), p.getFechaPublicacion(), p.getPublicador().getNombre(),
+                p.getFechaVencimiento()
         );
     }
 
@@ -381,7 +421,11 @@ public List<PublicacionResumenDto> misBorradores(Usuario usuario) {
                 p.getEstado(), p.getFechaPublicacion(),
                 p.getFotos().stream().map(Foto::getUrl).toList(),
                 p.getPublicador().getId(), p.getPublicador().getNombre(), Math.round(reputacion * 10.0) / 10.0,
-                esPropia, siguiendo, miReclamoEstado
+                esPropia, siguiendo, miReclamoEstado,
+                p.getHoraSuceso(),
+                p.getPreguntaVerificacion(),
+                esPropia ? p.getRespuestaVerificacion() : null,
+                p.getFechaVencimiento()
         );
     }
 

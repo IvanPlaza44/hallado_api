@@ -3,6 +3,7 @@ package com.hallado.api.dto.request;
 import com.hallado.api.enums.CategoriaItem;
 import com.hallado.api.enums.FranjaHoraria;
 import com.hallado.api.enums.TipoPublicacion;
+import java.time.LocalTime;
 
 import java.time.LocalDate;
 
@@ -22,5 +23,8 @@ public record PublicacionRequestDto(
         String barrio,
         Double latitud,
         Double longitud,
-        String direccionExacta
+        String direccionExacta,
+        LocalTime horaSuceso,
+        String preguntaVerificacion,
+        String respuestaVerificacion
 ) {}

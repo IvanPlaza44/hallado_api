@@ -5,6 +5,7 @@ import com.hallado.api.enums.EstadoPublicacion;
 import com.hallado.api.enums.EstadoReclamo;
 import com.hallado.api.enums.FranjaHoraria;
 import com.hallado.api.enums.TipoPublicacion;
+import java.time.LocalTime;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -33,5 +34,10 @@ public record PublicacionDetalleDto(
         boolean esPropia,
         boolean siguiendo,
         /** Estado del reclamo que el usuario logueado hizo sobre esta publicación, si hizo alguno */
-        EstadoReclamo miReclamoEstado
+        EstadoReclamo miReclamoEstado,
+        LocalTime horaSuceso,
+        String preguntaVerificacion,
+        /** null salvo que quien mira sea el publicador: la respuesta nunca se expone a otros */
+        String respuestaVerificacion,
+        LocalDateTime fechaVencimiento
 ) {}
