@@ -54,6 +54,7 @@ public class PublicacionService {
         Publicacion p = Publicacion.builder()
                 .publicador(publicador)
                 .tipo(dto.tipo())
+                .estado(EstadoPublicacion.BORRADOR)
                 .build();
         aplicarCambios(p, dto);
         publicacionRepository.save(p);
@@ -103,6 +104,31 @@ public class PublicacionService {
         Publicacion p = obtenerPropia(usuario, id);
         publicacionRepository.delete(p);
     }
+
+    @Transactional
+public PublicacionDetalleDto publicar(Usuario usuario, Long id) {
+    Publicacion p = obtenerPropia(usuario, id);
+    if (p.getEstado() != EstadoPublicacion.BORRADOR) {
+        throw ApiException.solicitudInvalida("La publicación ya está publicada");
+    }
+    // Para publicar tienen que estar los datos obligatorios completos
+    if (p.getCategoria() == null || p.getTitulo() == null || p.getTitulo().isBlank()
+            || p.getFechaSuceso() == null || p.getBarrio() == null || p.getBarrio().isBlank()) {
+        throw ApiException.solicitudInvalida(
+                "Completá categoría, título, fecha del suceso y barrio antes de publicar");
+    }
+    p.setEstado(EstadoPublicacion.ABIERTA);
+    p.setFechaPublicacion(LocalDateTime.now());
+    p.setFechaActualizacion(LocalDateTime.now());
+    publicacionRepository.save(p);
+    return aDetalle(p, usuario);
+}
+
+public List<PublicacionResumenDto> misBorradores(Usuario usuario) {
+    return publicacionRepository
+            .findByPublicadorAndEstadoIn(usuario, List.of(EstadoPublicacion.BORRADOR))
+            .stream().map(this::aResumen).toList();
+}
 
     // ---------- Buscador guiado y resultados ----------
 
@@ -157,11 +183,15 @@ public class PublicacionService {
 
     // ---------- Detalle ----------
 
-    public PublicacionDetalleDto obtenerDetalle(Long id, Usuario quienMira) {
-        Publicacion p = publicacionRepository.findById(id)
-                .orElseThrow(() -> ApiException.noEncontrado("Publicación no encontrada"));
-        return aDetalle(p, quienMira);
+ public PublicacionDetalleDto obtenerDetalle(Long id, Usuario quienMira) {
+    Publicacion p = publicacionRepository.findById(id)
+            .orElseThrow(() -> ApiException.noEncontrado("Publicación no encontrada"));
+    if (p.getEstado() == EstadoPublicacion.BORRADOR
+            && (quienMira == null || !p.getPublicador().getId().equals(quienMira.getId()))) {
+        throw ApiException.noEncontrado("Publicación no encontrada");
     }
+    return aDetalle(p, quienMira);
+}
 
     // ---------- Reclamos ("Es mío" / "Lo encontré") ----------
 
