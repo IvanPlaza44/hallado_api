@@ -91,6 +91,17 @@ public class PublicacionController {
         return ResponseEntity.ok(publicacionService.misPublicaciones(usuario));
     }
 
+    @GetMapping("/borradores")
+public ResponseEntity<List<PublicacionResumenDto>> misBorradores(@AuthenticationPrincipal Usuario usuario) {
+    return ResponseEntity.ok(publicacionService.misBorradores(usuario));
+}
+
+@PostMapping("/{id}/publicar")
+public ResponseEntity<PublicacionDetalleDto> publicar(@AuthenticationPrincipal Usuario usuario,
+                                                        @PathVariable Long id) {
+    return ResponseEntity.ok(publicacionService.publicar(usuario, id));
+}
+
     // ---------- Reclamos ----------
 
     @PostMapping("/{id}/reclamos")
