@@ -252,16 +252,41 @@ public class PublicacionService {
             throw ApiException.solicitudInvalida("No podés reclamar tu propia publicación");
         }
         if (p.getEstado() != EstadoPublicacion.ABIERTA && p.getEstado() != EstadoPublicacion.EN_RECLAMO) {
-            throw ApiException.solicitudInvalida("Esta publicación ya está resuelta");
+            throw ApiException.solicitudInvalida("Esta publicación ya no recibe reclamos");
         }
         if (reclamoRepository.findByPublicacionAndReclamanteAndEstado(p, reclamante, EstadoReclamo.PENDIENTE).isPresent()) {
             throw ApiException.conflicto("Ya tenés un reclamo pendiente sobre esta publicación");
+        }
+        // Máximo de intentos por persona y por publicación (cuentan todos: pendientes, rechazados y vencidos)
+        if (reclamoRepository.countByPublicacionAndReclamante(p, reclamante) >= Reclamo.MAX_INTENTOS_POR_PUBLICACION) {
+            throw ApiException.conflicto("Ya hiciste " + Reclamo.MAX_INTENTOS_POR_PUBLICACION
+                    + " reclamos sobre esta publicación");
+        }
+
+        String respuesta = textoOpcional(dto.respuestaVerificacion());
+        String barrio = textoOpcional(dto.barrio());
+        if (p.getTipo() == TipoPublicacion.ENCONTRADO) {
+            // "Es mío": tiene que responder la pregunta de verificación que cargó quien lo encontró
+            boolean hayPregunta = p.getPreguntaVerificacion() != null && !p.getPreguntaVerificacion().isBlank();
+            if (hayPregunta && respuesta == null) {
+                throw ApiException.solicitudInvalida("Respondé la pregunta de verificación");
+            }
+            barrio = null;
+        } else {
+            // "Lo encontré": tiene que indicar dónde lo encontró.
+            // La foto (obligatoria en este caso) se sube a continuación con POST /api/reclamos/{id}/foto.
+            if (barrio == null) {
+                throw ApiException.solicitudInvalida("Indicá el barrio donde lo encontraste");
+            }
+            respuesta = null;
         }
 
         Reclamo reclamo = Reclamo.builder()
                 .publicacion(p)
                 .reclamante(reclamante)
-                .mensaje(dto.mensaje())
+                .mensaje(textoOpcional(dto.mensaje()))
+                .respuestaVerificacion(respuesta)
+                .barrio(barrio)
                 .build();
         reclamoRepository.save(reclamo);
 
@@ -270,18 +295,54 @@ public class PublicacionService {
             publicacionRepository.save(p);
         }
 
-        return aReclamoDto(reclamo);
+        return aReclamoDto(reclamo, false);
     }
 
+    /** Foto que acredita el reclamo. Solo la sube quien reclamó, mientras el reclamo está pendiente. */
+    @Transactional
+    public ReclamoResponseDto subirFotoReclamo(Usuario usuario, Long reclamoId, MultipartFile archivo) {
+        Reclamo reclamo = reclamoRepository.findById(reclamoId)
+                .orElseThrow(() -> ApiException.noEncontrado("Reclamo no encontrado"));
+        if (!reclamo.getReclamante().getId().equals(usuario.getId())) {
+            throw ApiException.noAutorizado("Este reclamo no te pertenece");
+        }
+        if (reclamo.getEstado() != EstadoReclamo.PENDIENTE || reclamo.estaVencido()) {
+            throw ApiException.solicitudInvalida("Solo podés agregar la foto mientras el reclamo está pendiente");
+        }
+        if (archivo == null || archivo.isEmpty()) {
+            throw ApiException.solicitudInvalida("Debe adjuntar una imagen");
+        }
+        String url = cloudinaryService.subirImagen(archivo, "hallado/reclamos");
+        reclamo.setFotoUrl(url);
+        reclamoRepository.save(reclamo);
+        return aReclamoDto(reclamo, false);
+    }
+
+    /** "Mis reclamos" - los que envié. No incluyen la respuesta de verificación. */
+    @Transactional(readOnly = true)
+    public List<ReclamoResponseDto> reclamosEnviados(Usuario usuario) {
+        return reclamoRepository.findByReclamanteOrderByFechaCreacionDesc(usuario).stream()
+                .map(r -> aReclamoDto(r, false)).toList();
+    }
+
+    /** "Mis reclamos" - los que recibí sobre mis publicaciones. Incluyen la respuesta de verificación. */
+    @Transactional(readOnly = true)
+    public List<ReclamoResponseDto> reclamosRecibidos(Usuario usuario) {
+        return reclamoRepository.findByPublicacion_PublicadorOrderByFechaCreacionDesc(usuario).stream()
+                .map(r -> aReclamoDto(r, true)).toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<ReclamoResponseDto> listarReclamos(Usuario usuario, Long publicacionId) {
         Publicacion p = obtenerPropia(usuario, publicacionId);
-        return reclamoRepository.findByPublicacion(p).stream().map(this::aReclamoDto).toList();
+        return reclamoRepository.findByPublicacion(p).stream().map(r -> aReclamoDto(r, true)).toList();
     }
 
     @Transactional
     public void aceptarReclamo(Usuario usuario, Long publicacionId, Long reclamoId) {
         Publicacion p = obtenerPropia(usuario, publicacionId);
         Reclamo reclamo = obtenerReclamoDe(p, reclamoId);
+        validarPendiente(reclamo);
 
         reclamo.setEstado(EstadoReclamo.ACEPTADO);
         reclamo.setFechaResolucion(LocalDateTime.now());
@@ -305,16 +366,44 @@ public class PublicacionService {
     public void rechazarReclamo(Usuario usuario, Long publicacionId, Long reclamoId) {
         Publicacion p = obtenerPropia(usuario, publicacionId);
         Reclamo reclamo = obtenerReclamoDe(p, reclamoId);
+        validarPendiente(reclamo);
 
         reclamo.setEstado(EstadoReclamo.RECHAZADO);
         reclamo.setFechaResolucion(LocalDateTime.now());
         reclamoRepository.save(reclamo);
 
+        volverAAbiertaSiNoQuedanPendientes(p);
+    }
+
+    /** Corre cada 10 minutos: los reclamos PENDIENTES sin respuesta por más de 48 h pasan a VENCIDO. */
+    @Scheduled(cron = "0 */10 * * * *")
+    @Transactional
+    public void vencerReclamos() {
+        LocalDateTime limite = LocalDateTime.now().minusHours(Reclamo.HORAS_VENCIMIENTO);
+        reclamoRepository.findByEstadoAndFechaCreacionBefore(EstadoReclamo.PENDIENTE, limite).forEach(r -> {
+            r.setEstado(EstadoReclamo.VENCIDO);
+            r.setFechaResolucion(LocalDateTime.now());
+            volverAAbiertaSiNoQuedanPendientes(r.getPublicacion());
+        });
+    }
+
+    private void volverAAbiertaSiNoQuedanPendientes(Publicacion p) {
         boolean quedanPendientes = reclamoRepository.findByPublicacion(p).stream()
                 .anyMatch(r -> r.getEstado() == EstadoReclamo.PENDIENTE);
         if (!quedanPendientes && p.getEstado() == EstadoPublicacion.EN_RECLAMO) {
             p.setEstado(EstadoPublicacion.ABIERTA);
             publicacionRepository.save(p);
+        }
+    }
+
+    /** Solo se responde un reclamo PENDIENTE y dentro de las 48 h. */
+    private void validarPendiente(Reclamo reclamo) {
+        if (reclamo.estaVencido()) {
+            throw ApiException.solicitudInvalida("El reclamo venció: pasaron más de "
+                    + Reclamo.HORAS_VENCIMIENTO + " horas sin respuesta");
+        }
+        if (reclamo.getEstado() != EstadoReclamo.PENDIENTE) {
+            throw ApiException.solicitudInvalida("Este reclamo ya fue respondido");
         }
     }
 
@@ -325,6 +414,10 @@ public class PublicacionService {
             throw ApiException.solicitudInvalida("Ese reclamo no pertenece a esta publicación");
         }
         return reclamo;
+    }
+
+    private static String textoOpcional(String texto) {
+        return texto == null || texto.isBlank() ? null : texto.trim();
     }
 
     // ---------- Seguir una publicación ----------
@@ -437,14 +530,26 @@ public class PublicacionService {
         );
     }
 
-    private ReclamoResponseDto aReclamoDto(Reclamo r) {
+    /**
+     * paraPublicador: true cuando lo mira el dueño de la publicación. Solo en ese caso
+     * se incluye la respuesta a la pregunta de verificación.
+     */
+    private ReclamoResponseDto aReclamoDto(Reclamo r, boolean paraPublicador) {
         long positivas = reputacionService.valoracionesPositivas(r.getReclamante());
         long negativas = reputacionService.valoracionesNegativas(r.getReclamante());
         double reputacion = (positivas + negativas) == 0 ? 0.0 : (positivas * 1.0) / (positivas + negativas) * 5.0;
 
+        Publicacion p = r.getPublicacion();
+        // Si ya pasaron las 48 h pero el job todavía no corrió, se muestra igual como VENCIDO.
+        EstadoReclamo estado = r.estaVencido() ? EstadoReclamo.VENCIDO : r.getEstado();
+
         return new ReclamoResponseDto(
-                r.getId(), r.getPublicacion().getId(), r.getReclamante().getId(), r.getReclamante().getNombre(),
-                Math.round(reputacion * 10.0) / 10.0, r.getMensaje(), r.getEstado(), r.getFechaCreacion()
+                r.getId(), p.getId(), p.getTitulo(), p.getTipo(),
+                r.getReclamante().getId(), r.getReclamante().getNombre(), Math.round(reputacion * 10.0) / 10.0,
+                r.getMensaje(),
+                paraPublicador ? r.getRespuestaVerificacion() : null,
+                r.getBarrio(), r.getFotoUrl(),
+                estado, r.getFechaCreacion(), r.calcularVencimiento()
         );
     }
 }
