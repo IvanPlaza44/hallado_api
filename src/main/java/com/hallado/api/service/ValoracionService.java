@@ -15,11 +15,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+
 /**
  * Permite calificar (positiva/negativa) a la otra parte de una devolución, una vez
  * que la publicación quedó RESUELTA. Sólo el publicador y el reclamante aceptado
- * pueden calificarse entre sí, y cada uno puede dejar como máximo una valoración
- * por publicación hacia la otra parte.
+ * pueden calificarse entre sí, cada uno puede dejar como máximo una valoración
+ * por publicación hacia la otra parte, y sólo dentro de los 7 días posteriores a la devolución.
  */
 @Service
 @RequiredArgsConstructor
@@ -41,37 +43,28 @@ public class ValoracionService {
             throw ApiException.solicitudInvalida("Sólo se puede calificar una devolución ya resuelta");
         }
 
-        Usuario receptor = determinarContraparte(p, emisor);
+        Reclamo aceptado = reclamoRepository.findFirstByPublicacionAndEstado(p, EstadoReclamo.ACEPTADO)
+                .orElseThrow(() -> ApiException.solicitudInvalida("Esta publicación no tiene un reclamo aceptado"));
+        if (!HistorialService.participa(aceptado, emisor)) {
+            throw ApiException.noAutorizado("No participaste en la devolución de esta publicación");
+        }
 
-        boolean yaCalifico = valoracionRepository.findByReceptor(receptor).stream()
-                .anyMatch(v -> v.getPublicacion().getId().equals(p.getId()) && v.getEmisor().getId().equals(emisor.getId()));
-        if (yaCalifico) {
+        if (valoracionRepository.findFirstByEmisorAndPublicacion(emisor, p).isPresent()) {
             throw ApiException.conflicto("Ya calificaste esta devolución");
+        }
+
+        if (LocalDateTime.now().isAfter(HistorialService.fechaLimiteValoracion(aceptado))) {
+            throw ApiException.solicitudInvalida(
+                    "El plazo de " + HistorialService.PLAZO_VALORACION_DIAS + " días para valorar ya venció");
         }
 
         Valoracion valoracion = Valoracion.builder()
                 .emisor(emisor)
-                .receptor(receptor)
+                .receptor(HistorialService.contraparte(aceptado, emisor))
                 .publicacion(p)
                 .positiva(dto.positiva())
                 .comentario(dto.comentario())
                 .build();
         valoracionRepository.save(valoracion);
-    }
-
-    private Usuario determinarContraparte(Publicacion p, Usuario emisor) {
-        if (p.getPublicador().getId().equals(emisor.getId())) {
-            Reclamo aceptado = reclamoRepository.findByPublicacion(p).stream()
-                    .filter(r -> r.getEstado() == EstadoReclamo.ACEPTADO)
-                    .findFirst()
-                    .orElseThrow(() -> ApiException.solicitudInvalida("Esta publicación no tiene un reclamo aceptado"));
-            return aceptado.getReclamante();
-        }
-
-        Reclamo miReclamo = reclamoRepository.findByPublicacion(p).stream()
-                .filter(r -> r.getReclamante().getId().equals(emisor.getId()) && r.getEstado() == EstadoReclamo.ACEPTADO)
-                .findFirst()
-                .orElseThrow(() -> ApiException.noAutorizado("No participaste en la devolución de esta publicación"));
-        return p.getPublicador();
     }
 }
