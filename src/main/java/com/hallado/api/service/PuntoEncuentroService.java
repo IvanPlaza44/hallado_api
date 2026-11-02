@@ -25,6 +25,7 @@ import java.time.LocalDateTime;
  * - La primera propuesta la hace quien tiene el objeto.
  * - La otra parte acepta o propone otro punto (el anterior queda REEMPLAZADO), y así
  *   hasta que alguien acepta la propuesta del otro.
+ * - El teléfono de la otra parte se muestra solo si lo eligió en su perfil (Punto 2).
  */
 @Service
 @RequiredArgsConstructor
@@ -156,10 +157,15 @@ public class PuntoEncuentroService {
                 v.getEstado(), esDe(v, usuario), v.getPropuestoPor().getNombre(), v.getFechaCreacion()
         );
 
+        // Punto 2: el teléfono solo se comparte si la otra persona lo eligió en su perfil.
+        // Acá siempre hay un reclamo aceptado (lo valida obtenerReclamoAceptado).
+        Usuario otro = contraparte(reclamo, usuario);
+        String telefono = otro.isTelefonoVisible() ? textoOpcional(otro.getTelefono()) : null;
+
         Publicacion p = reclamo.getPublicacion();
         return new EncuentroDto(
                 reclamo.getId(), p.getId(), p.getTitulo(), tengoElObjeto,
-                contraparte(reclamo, usuario).getNombre(),
+                otro.getNombre(), telefono,
                 punto, puedoProponer, propuestaDelOtro
         );
     }
