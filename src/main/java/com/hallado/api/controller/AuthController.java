@@ -35,8 +35,9 @@ public class AuthController {
     }
 
     @PostMapping("/otp/verificar")
-    public ResponseEntity<AuthResponseDto> verificarOtp(@Valid @RequestBody OtpVerifyDto dto) {
-        return ResponseEntity.ok(authService.verificarOtp(dto));
+    public ResponseEntity<Void> verificarOtp(@Valid @RequestBody OtpVerifyDto dto) {
+        authService.verificarOtp(dto);
+        return ResponseEntity.ok().build();
     }
 
     @PostMapping("/login")

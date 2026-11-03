@@ -32,22 +32,8 @@ public class AuthService {
     }
 
     @Transactional
-    public AuthResponseDto verificarOtp(OtpVerifyDto dto) {
+    public void verificarOtp(OtpVerifyDto dto) {
         otpService.verificar(dto.email(), dto.codigo());
-
-        Usuario usuario = usuarioRepository.findByEmail(dto.email())
-                .orElseGet(() -> usuarioRepository.save(Usuario.builder()
-                        .email(dto.email())
-                        .emailVerificado(true)
-                        .build()));
-
-        if (!usuario.isEmailVerificado()) {
-            usuario.setEmailVerificado(true);
-            usuarioRepository.save(usuario);
-        }
-
-        String token = jwtService.generarToken(usuario.getEmail(), usuario.getId());
-        return new AuthResponseDto(token, usuario.getId(), usuario.getEmail(), usuario.getUsername());
     }
 
     public AuthResponseDto login(LoginDto dto) {
@@ -89,18 +75,21 @@ public class AuthService {
 
     @Transactional
     public void registrarUsuarioConPassword(LoginDto dto) {
-        // Verificamos que no exista
-        if (usuarioRepository.findByEmail(dto.usernameOrEmail()).isPresent()) {
+        String email = dto.usernameOrEmail();
+        if (usuarioRepository.findByEmail(email).isPresent()) {
             throw new ApiException("El usuario ya existe", HttpStatus.BAD_REQUEST);
         }
-        
+        if (!otpService.tieneVerificacionRegistroVigente(email)) {
+            throw ApiException.solicitudInvalida("Tenés que verificar el correo antes de crear la cuenta");
+        }
+
         Usuario nuevoUsuario = Usuario.builder()
-                .email(dto.usernameOrEmail())
-                .username(dto.usernameOrEmail()) // Usamos el email como username por ahora
-                .password(passwordEncoder.encode(dto.password())) // Encriptamos la clave!
+                .email(email)
+                .username(email)
+                .password(passwordEncoder.encode(dto.password()))
                 .emailVerificado(true)
                 .build();
-                
+
         usuarioRepository.save(nuevoUsuario);
     }
 }

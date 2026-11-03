@@ -39,6 +39,14 @@ public class OtpService {
         verificar(email, codigo, PropositoOtp.REGISTRO);
     }
 
+    /** True si ese email ya pasó por /otp/verificar y el código de registro sigue vigente. */
+    public boolean tieneVerificacionRegistroVigente(String email) {
+        return codigoOtpRepository
+                .findFirstByEmailAndPropositoAndUsadoTrueAndExpiracionAfterOrderByIdDesc(
+                        email, PropositoOtp.REGISTRO, LocalDateTime.now())
+                .isPresent();
+    }
+
     public void generarYEnviarRecuperacion(String email) {
         generar(email, PropositoOtp.RECUPERACION, mailService::enviarCodigoRecuperacion);
     }
